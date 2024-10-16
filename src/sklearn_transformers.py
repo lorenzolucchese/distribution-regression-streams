@@ -4,6 +4,7 @@ import random
 import doctest
 import iisignature
 import warnings
+from typing import Union
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -83,10 +84,13 @@ class LeadLag(BaseEstimator, TransformerMixin):
 
 class ExpectedSignatureTransform(BaseEstimator, TransformerMixin):
 
-    def __init__(self, order):
+    def __init__(self, order, martingale_indices=None):
         if not isinstance(order, int) or order < 1:
             raise NameError('The order must be a positive integer.')
+        if martingale_indices is not None and (not isinstance(martingale_indices, list) or not all(isinstance(i, int) for i in martingale_indices)):
+            raise NameError('The martingale_indices must be a list of integers.')
         self.order = order
+        self.martingale_indices = martingale_indices
 
     def fit(self, X, y=None):
         return self
@@ -96,18 +100,21 @@ class ExpectedSignatureTransform(BaseEstimator, TransformerMixin):
         lengths = [item.shape[0] for bag in X for item in bag]
         if len(list(set(lengths))) == 1:
             # if all time series have the same length, the signatures can be computed in batch
-            X = [iisignature.sig(bag, self.order) for bag in X]
+            X = [compute_signature(bag, self.order, self.martingale_indices) for bag in X]
         else:
-            X = [np.array([iisignature.sig(item, self.order) for item in bag]) for bag in X]
+            X = [np.array([compute_signature(item, self.order, self.martingale_indices) for item in bag]) for bag in X]
         return [x.mean(0) for x in X]
 
 
 class pathwiseExpectedSignatureTransform(BaseEstimator, TransformerMixin):
 
-    def __init__(self, order):
+    def __init__(self, order, martingale_indices=None):
         if not isinstance(order, int) or order < 1:
             raise NameError('The order must be a positive integer.')
+        if martingale_indices is not None and (not isinstance(martingale_indices, list) or not all(isinstance(i, int) for i in martingale_indices)):
+            raise NameError('The martingale_indices must be a list of integers.')
         self.order = order
+        self.martingale_indices = martingale_indices
 
     def fit(self, X, y=None):
         return self
@@ -119,7 +126,7 @@ class pathwiseExpectedSignatureTransform(BaseEstimator, TransformerMixin):
             lengths = [item.shape[0] for item in bag]
             if len(list(set(lengths))) == 1:
                 # if all time series have the same length, the (pathwise) signatures can be computed in batch
-                pwES.append(iisignature.sig(bag, self.order, 2))
+                pwES.append(compute_signature(bag, self.order, self.martingale_indices, stream=True))
             else:
                 error_message = 'All time series in a bag must have the same length'
                 raise NameError(error_message)
@@ -142,9 +149,56 @@ class SignatureTransform(BaseEstimator, TransformerMixin):
         lengths = [pwES.shape[0] for pwES in X]
         if len(list(set(lengths))) == 1:
             # if all pathwise expected signatures have the same length, the signatures can be computed in batch
-            return iisignature.sig(X, self.order)
+            return compute_signature(X, self.order)
         else:
-            return [iisignature.sig(item, self.order) for item in X]
+            return [compute_signature(item, self.order) for item in X]
+
+
+def get_signature_indices(depth: int, channels: int, ending_indices: list[int]):
+    if not isinstance(ending_indices, list) or not all(isinstance(i, int) for i in ending_indices) or not all(0 <= i < channels for i in ending_indices):
+        raise ValueError(f'The ending_indices argument must be a list of integers between 0 and channels={channels}, got ending_indices={ending_indices}.')
+    sig_indices = []
+    start_index = 0
+    for i in range(1, depth + 1):
+        # in each signature level, of size channels**i, we want to extract j*channels**(i-1):(j+1)*channels**(i-1) for j in ending_indices
+        for j in ending_indices:
+            sig_indices.extend(list(range(start_index+j*channels**(i-1), start_index+(j+1)*channels**(i-1))))
+        start_index += channels**i
+    return sig_indices
+
+
+def compute_signature(X: Union[np.ndarray, list[np.ndarray]], order: int, martingale_indices: list[int] = None, stream: bool = False):
+    if isinstance(X, list):
+        X = np.stack(X, axis=0)
+    batch, length, channels = X.shape
+    signatures_stream = iisignature.sig(X, order, 2)                                                                        # shape: (batch, length - 1, channels + ... + channels**depth)
+    signatures = signatures_stream if stream else signatures_stream[:, -1, :]                                               # shape: (batch, channels + ... + channels**depth) or (batch, length - 1, channels + ... + channels**depth)
+    if martingale_indices:
+        signatures_lower = signatures_stream[:, :-1, :-channels**order]                                                     # shape: (batch, length - 2, channels + ... + channels**(depth-1))
+        # pre-pend signature starting values at zero
+        signatures_start = np.concatenate([np.zeros((batch, 1, channels**i)) for i in range(1, order)], axis=2)             # shape: (batch, 1, channels + ... + channels**(depth-1))	
+        signatures_lower = np.concatenate([signatures_start, signatures_lower], axis=1)                                     # shape: (batch, length - 1, channels + ... + channels**(depth-1))        
+        # append 0-th order signature
+        signatures_lower = np.concatenate([np.ones((batch, length - 1, 1)), signatures_lower], axis=2)                      # shape: (batch, length - 1, 1 + channels + ... + channels**(depth-1))
+        if stream:
+            corrections = np.einsum('ijk,ijl->ijkl', signatures_lower, np.diff(X, axis=1))                                  # shape: (batch, length - 1, 1 + channels + ... + channels**(depth-1), channels)
+            corrections = np.cumsum(corrections, axis=1).reshape((batch, length - 1, -1))                                   # shape: (batch, length - 1, channels + ... + channels**depth)
+            num = np.einsum('ijk,ijk->ijk', signatures, corrections).mean(axis=0)                                           # shape: (length - 1, channels + ... + channels**depth)
+        else:
+            corrections = np.einsum('ijk,ijl->ikl', signatures_lower, np.diff(X, axis=1))                                   # shape: (batch, 1 + channels + ... + channels**(depth-1), channels)
+            corrections = corrections.reshape((batch, -1))                                                                  # shape: (batch, channels + ... + channels**depth)
+            num = np.einsum('ij,ij->ij', signatures, corrections).mean(axis=0)                                              # shape: (channels + ... + channels**depth)
+        #TODO: implement other way of estimating c_hat
+        #NOTE: replacing zeros in denom with ones both c_hat and corrections are zero at those indices
+        denom = (corrections**2).mean(axis=0)
+        denom[denom == 0] = 1
+        c_hat = num / denom                                                                                                 # shape: (channels + ... + channels**depth) or (length - 1, channels + ... + channels**depth)
+        #TODO: pre-compute signature indices for efficiency
+        sig_indices = get_signature_indices(order, channels, martingale_indices)
+        signatures[..., sig_indices] -= (c_hat * corrections)[..., sig_indices]                                             
+    else:
+        pass
+    return signatures                                                                                                       # shape: (batch, channels + ... + channels**depth) or (batch, length - 1, channels + ... + channels**depth)
 
 
 if __name__ == "__main__":
