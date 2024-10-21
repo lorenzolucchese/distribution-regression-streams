@@ -4,15 +4,25 @@ warnings.filterwarnings('ignore')
 import numpy as np
 from fbm import FBM
 
-def fOU_generator(a,n=0.3,h=0.2,length=300):
-    
+def fOU_generator(a: float, n: float = 0.3, h: float = 0.2, length: int = 300) -> np.ndarray:
+    # X(t+1) = X(t) - a(X(t)-m) + n(W^H(t+1)-W^H(t))
     fbm_increments = np.diff(FBM(length, h).fbm())
-    # X(t+1) = X(t) - a(X(t)-m) + n(W(t+1)-W(t))
-    x0 = np.random.normal(1,0.1)
+    x0 = np.random.normal(1, 0.1)
     x0 = 0.5
     m = x0
-    price = [x0]
+    X = [x0]
     for i in range(length):
-        p = price[i] - a*(price[i]-m) + n*fbm_increments[i]
-        price.append(p)
-    return np.array(price)
+        p = X[i] - a*(X[i]-m) + n*fbm_increments[i]
+        X.append(p)
+    return np.array(X)
+
+
+def price_generator(vol: np.ndarray) -> np.ndarray:
+    # P(t+1) - P(t) = P(t) vol(t) (W(t+1) - W(t)) 
+    length = len(vol)
+    deltaW = np.random.normal(0, np.sqrt(1/(length-1)), size=length-1)
+    P = np.zeros(length)
+    P[0] = 1.
+    for i in range(0, length-1):
+        P[i+1] = P[i]*(1 + vol[i]*deltaW[i])
+    return P
