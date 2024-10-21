@@ -4,3 +4,9 @@
 
 /Time-Series-Classification/Multivariate/Multivariate_arff
 /data
+/examples/experiments
+*.pbs*
+*.cpython-39.pyc
+*.so
+*.o
+*.pyc
