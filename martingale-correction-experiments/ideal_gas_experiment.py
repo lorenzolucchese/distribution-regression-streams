@@ -46,8 +46,8 @@ def run_experiment(r = 3.5, M = 50, n_particles = 20, V = 3, max_time = 2, dt = 
     _, _, results_SES_mvr = SES.model(gases, temperatures/max_T, ll=ll, at=True, NUM_TRIALS=5, cv=3, depths1=[2,3], depth2=2, martingale_indices=[0,1,2]) 
 
     results = {'rbf': results_RBF, 'Matern': results_Matern, 'GA': results_GA, 'KER': results_KES, 'SES': results_SES, 'SES_mvr': results_SES_mvr}
-    os.makedirs('experiments/ideal_gas', exist_ok=True)
-    pickle.dump(results, open(f'experiments/ideal_gas/r={r}_ll={ll}.pkl', 'wb'))
+    os.makedirs('results/ideal_gas', exist_ok=True)
+    pickle.dump(results, open(f'results/ideal_gas/r={r}_ll={ll}.pkl', 'wb'))
 
 
 if __name__ == "__main__":

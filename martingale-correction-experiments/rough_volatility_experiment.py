@@ -42,8 +42,8 @@ def run_experiment(N = 20, M = 50, length = 200, min_T = 1e-6, max_T = 1e0, ll =
         _, _, results_SES_mvr = SES.model(X, y, ll=ll, at=True, NUM_TRIALS=5, cv=3, depths1=[2,3,4], depth2=2, martingale_indices=[0])
 
         results = {'rbf': results_RBF, 'Matern': results_Matern, 'GA': results_GA, 'KER': results_KES, 'SES': results_SES, 'SES_mvr': results_SES_mvr}
-        os.makedirs('experiments/finance', exist_ok=True)
-        pickle.dump(results, open(f'experiments/finance/{features}_N={N}_ll={ll}.pkl', 'wb'))
+        os.makedirs('results/finance', exist_ok=True)
+        pickle.dump(results, open(f'results/finance/{features}_N={N}_ll={ll}.pkl', 'wb'))
 
 
 if __name__ == "__main__":
