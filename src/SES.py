@@ -59,7 +59,7 @@ def model(X, y, depths1=[2], depth2=2, ll=None, at=False, martingale_indices=Non
     # parameters for grid search
     parameters = {'lin_reg__alpha': [1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1e0, 1e1, 1e2, 1e3, 1e4, 1e5],
                   'lin_reg__fit_intercept': [False, True],
-                #   'lin_reg__normalize': [True, False],
+                  'lin_reg__normalize': [True, False],
                   }
 
     # check if the user has not given an irrelevant entry
