@@ -11,7 +11,7 @@ from sklearn.linear_model import LinearRegression, Lasso
 from sklearn.pipeline import Pipeline
 
 
-def model(X, y, depths1=[2], depth2=2, ll=None, at=False, NUM_TRIALS=5, cv=3, grid={}):
+def model(X, y, depths1=[2], depth2=2, ll=None, at=False, martingale_indices=None, NUM_TRIALS=5, cv=3, grid={}):
     """Performs a Lasso-based distribution regression on ensembles (of possibly unequal cardinality)
        of univariate or multivariate time-series (of possibly unequal lengths)
 
@@ -30,6 +30,7 @@ def model(X, y, depths1=[2], depth2=2, ll=None, at=False, NUM_TRIALS=5, cv=3, gr
 
               ll (list of ints): dimensions to lag
               at (bool): if True pre-process the input path with add-time
+              martingale_indices (list of ints): indices of the martingale components in the path
 
               NUM_TRIALS, cv (int): parameters for nested cross-validation
 
@@ -45,8 +46,14 @@ def model(X, y, depths1=[2], depth2=2, ll=None, at=False, NUM_TRIALS=5, cv=3, gr
     # possibly augment the state space of the time series
     if ll is not None:
         X = LeadLag(ll).fit_transform(X)
+        if martingale_indices is not None:
+            # keep lead components as martingale components
+            pass
     if at:
         X = AddTime().fit_transform(X)
+        if martingale_indices is not None:
+            # time is added in the first dimension
+            martingale_indices = [i+1 for i in martingale_indices]
   
 
     # parameters for grid search
@@ -76,7 +83,7 @@ def model(X, y, depths1=[2], depth2=2, ll=None, at=False, NUM_TRIALS=5, cv=3, gr
         MSE_test = np.zeros(len(depths1))
         results_tmp = {}
         for n, depth in enumerate(depths1):
-            pwES = pathwiseExpectedSignatureTransform(order=depth).fit_transform(X)
+            pwES = pathwiseExpectedSignatureTransform(order=depth, martingale_indices=martingale_indices).fit_transform(X)
             SpwES = SignatureTransform(order=depth2).fit_transform(pwES)
 
             X_train, X_test, y_train, y_test = train_test_split(np.array(SpwES), np.array(y), test_size=0.2,

@@ -15,8 +15,8 @@ def sig_kernels_mmd(double[:,:,:] x, double[:,:,:] y, int n=0, bint sym=False):
 	cdef double factor = 2**(2*n)
 
 	cdef int i, j, k, l, ii, jj
-	cdef int MM = (2**n)*(M-1)
-	cdef int NN = (2**n)*(N-1)
+	cdef int MM = int((2**n)*(M-1))
+	cdef int NN = int((2**n)*(N-1))
 
 	cdef double[:,:,:,:] K = np.zeros((A,B,MM+1,NN+1), dtype=np.float64)
 
